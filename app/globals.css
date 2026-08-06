@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #0a0d12;
+  color: #e5e9ef;
+}
+
+body {
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* Tabular, aligned numbers everywhere in the ops tool. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+::selection {
+  background: #2b4b6b;
+}
