@@ -29,6 +29,8 @@ export default function Home() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [text, setText] = useState("");
+  const [uniformMode, setUniformMode] = useState(false);
+  const [uniformAmount, setUniformAmount] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [parseErrors, setParseErrors] = useState<ParseError[]>([]);
   const [parsed, setParsed] = useState(false);
@@ -91,6 +93,8 @@ export default function Home() {
     setRecipients([]);
     setParseErrors([]);
     setParsed(false);
+    // Amounts mean a different token per chain — clear the shared amount too.
+    setUniformAmount("");
     setSenderBalanceRaw(null);
     setFeePerTransfer(null);
     setFeeError(null);
@@ -178,6 +182,7 @@ export default function Home() {
       text,
       activeChain.kind,
       activeChain.decimals,
+      { uniformAmount: uniformMode ? uniformAmount.trim() : null },
     );
     setParseErrors(errors);
     if (errors.length > 0) {
@@ -189,7 +194,7 @@ export default function Home() {
     recipientsRef.current = parsedRows;
     setParsed(true);
     await Promise.all([fetchBalances(parsedRows), fetchFees()]);
-  }, [activeChain, text, fetchBalances, fetchFees]);
+  }, [activeChain, text, uniformMode, uniformAmount, fetchBalances, fetchFees]);
 
   // --- Totals / preview ----------------------------------------------------
   const totalAmountRaw = useMemo(
@@ -499,19 +504,79 @@ export default function Home() {
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
         {/* Recipient input */}
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xs uppercase tracking-wide text-zinc-500">
-              Recipients — one{" "}
-              <code className="text-zinc-400">address,amount</code> per line
+              Recipients —{" "}
+              {uniformMode ? (
+                <>
+                  one <code className="text-zinc-400">address</code> per line
+                </>
+              ) : (
+                <>
+                  one <code className="text-zinc-400">address,amount</code> per
+                  line
+                </>
+              )}
               {activeChain && (
                 <>
                   {" "}
-                  (amount in{" "}
-                  <span className="text-zinc-300">{activeChain.symbol}</span>)
+                  (amounts in{" "}
+                  <span className="text-zinc-200">{activeChain.symbol}</span>)
                 </>
               )}
             </h2>
+
+            {/* Amount mode toggle */}
+            <div className="flex items-center gap-1 rounded-full border border-edge bg-panelalt p-0.5 text-xs">
+              <button
+                onClick={() => setUniformMode(false)}
+                disabled={executing}
+                className={`rounded-full px-3 py-1 transition disabled:opacity-50 ${
+                  !uniformMode
+                    ? "bg-zinc-100 text-zinc-900"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Per-recipient amount
+              </button>
+              <button
+                onClick={() => setUniformMode(true)}
+                disabled={executing}
+                className={`rounded-full px-3 py-1 transition disabled:opacity-50 ${
+                  uniformMode
+                    ? "bg-zinc-100 text-zinc-900"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Same amount for all
+              </button>
+            </div>
           </div>
+
+          {/* Uniform amount input — labeled with the active chain's gas token */}
+          {uniformMode && activeChain && (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-zinc-500">
+                Amount sent to every recipient
+              </label>
+              <div className="flex items-stretch overflow-hidden rounded-lg border border-edge bg-panelalt focus-within:border-zinc-500">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={uniformAmount}
+                  onChange={(e) => setUniformAmount(e.target.value)}
+                  disabled={executing}
+                  spellCheck={false}
+                  placeholder="0.01"
+                  className="w-40 bg-transparent px-3 py-1.5 text-sm num outline-none disabled:opacity-60"
+                />
+                <span className="flex items-center border-l border-edge bg-panel px-3 text-xs font-medium text-zinc-300">
+                  {activeChain.symbol}
+                </span>
+              </div>
+            </div>
+          )}
+
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -519,16 +584,24 @@ export default function Home() {
             rows={6}
             spellCheck={false}
             placeholder={
-              activeChain?.kind === "solana"
-                ? "SoLPubkey...,0.5\nSoLPubkey...,1.25"
-                : "0xabc...,0.01\n0xdef...,0.5"
+              uniformMode
+                ? activeChain?.kind === "solana"
+                  ? "SoLPubkey...\nSoLPubkey..."
+                  : "0xabc...\n0xdef..."
+                : activeChain?.kind === "solana"
+                  ? "SoLPubkey...,0.5\nSoLPubkey...,1.25"
+                  : "0xabc...,0.01\n0xdef...,0.5"
             }
             className="w-full resize-y rounded-lg border border-edge bg-panelalt px-3 py-2 text-sm num outline-none focus:border-zinc-500 disabled:opacity-60"
           />
           <div className="flex items-center gap-3">
             <button
               onClick={onParse}
-              disabled={executing || text.trim().length === 0}
+              disabled={
+                executing ||
+                text.trim().length === 0 ||
+                (uniformMode && uniformAmount.trim().length === 0)
+              }
               className="rounded bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 transition hover:bg-white disabled:opacity-40"
             >
               Parse
@@ -550,7 +623,9 @@ export default function Home() {
               <ul className="space-y-1 text-xs text-red-200/90">
                 {parseErrors.map((e) => (
                   <li key={e.line} className="num">
-                    <span className="text-red-400">line {e.line}:</span>{" "}
+                    <span className="text-red-400">
+                      {e.line === 0 ? "shared amount:" : `line ${e.line}:`}
+                    </span>{" "}
                     {e.reason}
                     {e.content ? (
                       <span className="text-red-300/70"> — “{e.content}”</span>
