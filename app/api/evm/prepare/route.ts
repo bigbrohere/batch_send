@@ -3,11 +3,18 @@ import { z } from "zod";
 import { requireAuth } from "@/lib/session";
 import { getEvmChain } from "@/lib/chains";
 import { isChainEnabled } from "@/lib/env";
-import { assertChainId, evmAddress, publicClientFor } from "@/lib/evm";
+import {
+  assertChainId,
+  evmAccountForAddress,
+  publicClientFor,
+} from "@/lib/evm";
 
 export const runtime = "nodejs";
 
-const schema = z.object({ chain: z.string().min(1) });
+const schema = z.object({
+  chain: z.string().min(1),
+  from: z.string().min(1),
+});
 
 /**
  * Verify the RPC serves the expected chainId (hard-fails on mismatch, nothing is
@@ -36,9 +43,17 @@ export async function POST(req: Request) {
     );
   }
 
+  const account = evmAccountForAddress(parsed.data.from);
+  if (!account) {
+    return NextResponse.json(
+      { error: "Unknown sender address" },
+      { status: 400 },
+    );
+  }
+
   try {
     const chainId = await assertChainId(chain);
-    const from = evmAddress();
+    const from = account.address;
     const client = publicClientFor(chain);
     const nonce = await client.getTransactionCount({
       address: from,

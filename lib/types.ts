@@ -7,7 +7,8 @@ export interface ChainInfo {
   decimals: number;
   kind: ChainKind;
   explorerBaseUrl: string;
-  address: string;
+  /** Available sender addresses for this chain (one per configured key). */
+  senders: string[];
   /** Max ms the client polls for an EVM receipt before marking it unconfirmed. */
   receiptTimeoutMs: number;
 }

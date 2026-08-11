@@ -10,17 +10,18 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import {
   MULTICALL3_ADDRESS,
   type ChainEntry,
 } from "./chains";
-import { evmPrivateKey, rpcUrlFor } from "./env";
+import { evmPrivateKeys, rpcUrlFor } from "./env";
 import { mapWithConcurrency } from "./concurrency";
 
 /**
- * Server-side EVM helpers built on viem. One private key is reused across every
- * EVM chain (same address). Clients are cached per chain in module scope.
+ * Server-side EVM helpers built on viem. Each configured private key is a sender;
+ * one key produces the same address across every EVM chain. Public clients are
+ * cached per chain, wallet clients per (chain, sender), in module scope.
  */
 
 const MULTICALL3_ABI = [
@@ -39,19 +40,52 @@ const walletClients = new Map<string, WalletClient>();
 // Per-chain cache of whether Multicall3 is deployed. null = not yet probed.
 const multicallPresence = new Map<string, boolean>();
 
-function normalizedKey(): Hex {
-  const key = evmPrivateKey();
-  if (!key) throw new Error("EVM_PRIVATE_KEY is not configured");
+let cachedAccounts: PrivateKeyAccount[] | null = null;
+
+function normalizeKey(key: string): Hex {
   const withPrefix = key.startsWith("0x") ? key : `0x${key}`;
   return withPrefix as Hex;
 }
 
-export function evmAccount() {
-  return privateKeyToAccount(normalizedKey());
+/**
+ * All configured EVM sender accounts, in env order, de-duplicated by address.
+ * Malformed keys are skipped (never logged) so one bad key can't disable the app.
+ */
+export function evmAccounts(): PrivateKeyAccount[] {
+  if (cachedAccounts) return cachedAccounts;
+  const keys = evmPrivateKeys();
+  if (keys.length === 0) throw new Error("No EVM private key is configured");
+  const seen = new Set<string>();
+  const accounts: PrivateKeyAccount[] = [];
+  keys.forEach((key, i) => {
+    try {
+      const account = privateKeyToAccount(normalizeKey(key));
+      if (!seen.has(account.address)) {
+        seen.add(account.address);
+        accounts.push(account);
+      }
+    } catch {
+      // Skip an invalid key without exposing its material.
+      console.warn(`Skipping malformed EVM private key at index ${i}`);
+    }
+  });
+  if (accounts.length === 0) throw new Error("No valid EVM private key");
+  cachedAccounts = accounts;
+  return accounts;
 }
 
-export function evmAddress(): Address {
-  return evmAccount().address;
+/** All EVM sender addresses (same across every EVM chain). */
+export function evmAddresses(): Address[] {
+  return evmAccounts().map((a) => a.address);
+}
+
+/** Find the sender account matching an address, or undefined. */
+export function evmAccountForAddress(
+  address: string,
+): PrivateKeyAccount | undefined {
+  if (!isAddress(address)) return undefined;
+  const target = getAddress(address);
+  return evmAccounts().find((a) => a.address === target);
 }
 
 export function publicClientFor(chain: ChainEntry): PublicClient {
@@ -72,22 +106,26 @@ export function publicClientFor(chain: ChainEntry): PublicClient {
   return client;
 }
 
-export function walletClientFor(chain: ChainEntry): WalletClient {
+export function walletClientFor(
+  chain: ChainEntry,
+  account: PrivateKeyAccount,
+): WalletClient {
   if (chain.kind !== "evm" || !chain.viemChain) {
     throw new Error(`Not an EVM chain: ${chain.id}`);
   }
-  const cached = walletClients.get(chain.id);
+  const cacheKey = `${chain.id}:${account.address}`;
+  const cached = walletClients.get(cacheKey);
   if (cached) return cached;
 
   const rpc = rpcUrlFor(chain);
   if (!rpc) throw new Error(`No RPC configured for ${chain.id}`);
 
   const client = createWalletClient({
-    account: evmAccount(),
+    account,
     chain: chain.viemChain,
     transport: http(rpc),
   });
-  walletClients.set(chain.id, client);
+  walletClients.set(cacheKey, client);
   return client;
 }
 

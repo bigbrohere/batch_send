@@ -12,7 +12,7 @@ import { isChainEnabled } from "@/lib/env";
 import {
   isSolanaAddress,
   solanaConnection,
-  solanaKeypair,
+  solanaKeypairForAddress,
 } from "@/lib/solana";
 import { parseAmountToRaw } from "@/lib/amount";
 
@@ -22,6 +22,7 @@ export const maxDuration = 60;
 const SOLANA_DECIMALS = 9;
 
 const schema = z.object({
+  from: z.string().min(1),
   transfers: z
     .array(
       z.object({
@@ -70,6 +71,14 @@ export async function POST(req: Request) {
     }
   }
 
+  const payer = solanaKeypairForAddress(parsed.data.from);
+  if (!payer) {
+    return NextResponse.json(
+      { error: "Unknown sender address" },
+      { status: 400 },
+    );
+  }
+
   let lamports: bigint[];
   try {
     lamports = parsed.data.transfers.map((t) =>
@@ -81,7 +90,6 @@ export async function POST(req: Request) {
 
   try {
     const conn = solanaConnection();
-    const payer = solanaKeypair();
     const tx = new Transaction();
     parsed.data.transfers.forEach((t, i) => {
       tx.add(
