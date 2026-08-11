@@ -8,6 +8,7 @@ import {
   assertChainId,
   getAddress,
   isAddress,
+  resolveEvmFees,
   walletClientFor,
 } from "@/lib/evm";
 import { parseAmountToRaw } from "@/lib/amount";
@@ -69,12 +70,15 @@ export async function POST(req: Request) {
     // the wrong network.
     await assertChainId(chain);
     const wallet = walletClientFor(chain);
+    // Estimate fees and apply the registry priority-fee floor for this chain.
+    const fees = await resolveEvmFees(chain);
     const hash = await wallet.sendTransaction({
       account: wallet.account!,
       chain: chain.viemChain,
       to: getAddress(parsed.data.to) as Address,
       value,
       nonce: parsed.data.nonce,
+      ...fees,
     });
     return NextResponse.json({ hash });
   } catch (e) {

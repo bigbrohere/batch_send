@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/session";
 import { enabledChains } from "@/lib/env";
+import { receiptTimeoutFor } from "@/lib/chains";
 import { evmAddress } from "@/lib/evm";
 import { solanaAddress } from "@/lib/solana";
 
@@ -20,6 +21,7 @@ export async function GET() {
       kind: c.kind,
       explorerBaseUrl: c.explorerBaseUrl,
       address: c.kind === "evm" ? evmAddress() : solanaAddress(),
+      receiptTimeoutMs: receiptTimeoutFor(c),
     }));
     return NextResponse.json({ chains });
   } catch {

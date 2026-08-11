@@ -8,6 +8,8 @@ export interface ChainInfo {
   kind: ChainKind;
   explorerBaseUrl: string;
   address: string;
+  /** Max ms the client polls for an EVM receipt before marking it unconfirmed. */
+  receiptTimeoutMs: number;
 }
 
 export type RowStatus =

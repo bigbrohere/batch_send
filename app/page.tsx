@@ -13,7 +13,6 @@ import { RecipientsTable } from "@/components/RecipientsTable";
 const SOLANA_CHUNK = 15;
 const SOLANA_FEE_PER_SIG = 5000n; // lamports
 const RECEIPT_POLL_MS = 2000;
-const RECEIPT_TIMEOUT_MS = 60000;
 
 function normalizeAddr(addr: string, kind: "evm" | "solana"): string {
   return kind === "evm" ? getAddress(addr) : addr;
@@ -282,7 +281,7 @@ export default function Home() {
         nonce += 1;
         patchRow(i, { status: "pending", hash });
 
-        const deadline = Date.now() + RECEIPT_TIMEOUT_MS;
+        const deadline = Date.now() + activeChain.receiptTimeoutMs;
         let settled = false;
         while (Date.now() < deadline) {
           await sleep(RECEIPT_POLL_MS);
