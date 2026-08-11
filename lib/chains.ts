@@ -38,6 +38,17 @@ export interface ChainEntry {
   multicall3: string | null;
   /** viem Chain object for EVM chains; undefined for Solana. */
   viemChain?: ViemChain;
+  /**
+   * Minimum priority fee (wei) to enforce on EIP-1559 sends. When set, the
+   * estimated maxPriorityFeePerGas is floored to this value so txs aren't
+   * under-tipped. Omit on chains where tips don't affect inclusion/ordering.
+   */
+  minPriorityFeeWei?: bigint;
+  /**
+   * Max time (ms) the client polls for a receipt before marking a tx
+   * "unconfirmed". Defaults handled at the call site when absent.
+   */
+  receiptTimeoutMs?: number;
 }
 
 // Custom chain objects for networks not shipped by viem.
@@ -81,6 +92,8 @@ export const CHAINS: ChainEntry[] = [
     explorerBaseUrl: "https://etherscan.io/tx/",
     multicall3: MULTICALL3_ADDRESS,
     viemChain: mainnet,
+    minPriorityFeeWei: 1_000_000_000n, // 1 gwei
+    receiptTimeoutMs: 180_000,
   },
   {
     id: "base",
@@ -94,6 +107,8 @@ export const CHAINS: ChainEntry[] = [
     explorerBaseUrl: "https://basescan.org/tx/",
     multicall3: MULTICALL3_ADDRESS,
     viemChain: base,
+    minPriorityFeeWei: 50_000_000n, // 0.05 gwei
+    receiptTimeoutMs: 60_000,
   },
   {
     id: "arbitrum",
@@ -107,6 +122,9 @@ export const CHAINS: ChainEntry[] = [
     explorerBaseUrl: "https://arbiscan.io/tx/",
     multicall3: MULTICALL3_ADDRESS,
     viemChain: arbitrum,
+    // No minPriorityFeeWei: Nitro sequencer is FCFS — priority tips do not
+    // affect ordering/inclusion, so flooring them only wastes fees.
+    receiptTimeoutMs: 60_000,
   },
   {
     id: "polygon",
@@ -120,6 +138,8 @@ export const CHAINS: ChainEntry[] = [
     explorerBaseUrl: "https://polygonscan.com/tx/",
     multicall3: MULTICALL3_ADDRESS,
     viemChain: polygon,
+    // No minPriorityFeeWei: leave current estimate behavior unchanged.
+    receiptTimeoutMs: 60_000,
   },
   {
     id: "hyperevm",
@@ -133,6 +153,8 @@ export const CHAINS: ChainEntry[] = [
     explorerBaseUrl: "https://hyperevmscan.io/tx/",
     multicall3: null, // Unknown — probe with getCode at runtime.
     viemChain: hyperEvm,
+    minPriorityFeeWei: 1_000_000_000n, // 1 gwei (HYPE)
+    receiptTimeoutMs: 60_000,
   },
   {
     id: "robinhood",
@@ -146,6 +168,9 @@ export const CHAINS: ChainEntry[] = [
     explorerBaseUrl: "https://robinhoodchain.blockscout.com/tx/",
     multicall3: null, // Unknown — probe with getCode at runtime.
     viemChain: robinhoodChain,
+    // No minPriorityFeeWei: Arbitrum Nitro FCFS — tips do not affect ordering,
+    // so flooring the priority fee only wastes funds.
+    receiptTimeoutMs: 60_000,
   },
   {
     id: "solana",
@@ -160,6 +185,14 @@ export const CHAINS: ChainEntry[] = [
     multicall3: null,
   },
 ];
+
+/** Fallback receipt-polling timeout for any chain without an explicit value. */
+export const DEFAULT_RECEIPT_TIMEOUT_MS = 60_000;
+
+/** Receipt-polling timeout (ms) for a chain, from the registry. */
+export function receiptTimeoutFor(chain: ChainEntry): number {
+  return chain.receiptTimeoutMs ?? DEFAULT_RECEIPT_TIMEOUT_MS;
+}
 
 export function getChain(id: string): ChainEntry | undefined {
   return CHAINS.find((c) => c.id === id);

@@ -107,6 +107,43 @@ export async function assertChainId(chain: ChainEntry): Promise<number> {
   return actual;
 }
 
+/** EIP-1559 fee fields, or a legacy gasPrice, ready to spread into a tx. */
+export type EvmFees =
+  | { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
+  | { gasPrice: bigint };
+
+/**
+ * Estimate fees and apply the chain's registry priority-fee floor, if any.
+ *
+ * The floor is read from the registry entry (keyed by chainId, never by name).
+ * When the chain has no `minPriorityFeeWei`, estimates pass through unchanged.
+ * When the floor raises the tip, `maxFeePerGas` is lifted to keep covering
+ * base fee + the floored tip. All math is bigint.
+ */
+export async function resolveEvmFees(chain: ChainEntry): Promise<EvmFees> {
+  const client = publicClientFor(chain);
+  const fees = await client.estimateFeesPerGas();
+
+  if (fees.maxFeePerGas != null && fees.maxPriorityFeePerGas != null) {
+    let maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+    let maxFeePerGas = fees.maxFeePerGas;
+
+    const floor = chain.minPriorityFeeWei;
+    if (floor != null && maxPriorityFeePerGas < floor) {
+      maxPriorityFeePerGas = floor; // max(estimated, floor)
+      // Keep maxFeePerGas covering the raised tip: max(estMaxFee, tip + 2*base).
+      const block = await client.getBlock({ blockTag: "latest" });
+      const baseFee = block.baseFeePerGas ?? 0n;
+      const needed = maxPriorityFeePerGas + 2n * baseFee;
+      if (maxFeePerGas < needed) maxFeePerGas = needed;
+    }
+    return { maxFeePerGas, maxPriorityFeePerGas };
+  }
+
+  // Legacy (pre-1559) chains: no priority fee to floor; pass gasPrice through.
+  return { gasPrice: fees.gasPrice ?? 0n };
+}
+
 /**
  * Decide whether Multicall3 can be used for this chain. Known deployments short
  * circuit; unknown chains are probed once via getCode and cached in module scope.
