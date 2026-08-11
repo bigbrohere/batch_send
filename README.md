@@ -34,6 +34,7 @@ All server-only — **never** prefixed `NEXT_PUBLIC_`. See `.env.example`.
 
 ```
 EVM_PRIVATE_KEY=0x...      # same key/address on all EVM chains
+EVM_PRIVATE_KEYS=          # optional — extra EVM senders (comma/newline sep.)
 ETHEREUM_RPC_URL=https://...   # required to enable Ethereum
 BASE_RPC_URL=              # optional — falls back to default public RPC
 ARBITRUM_RPC_URL=          # optional
@@ -41,15 +42,25 @@ POLYGON_RPC_URL=           # optional
 HYPEREVM_RPC_URL=          # optional
 ROBINHOOD_RPC_URL=         # optional
 SOLANA_PRIVATE_KEY=        # base58 secret key (Phantom export format)
+SOLANA_PRIVATE_KEYS=       # optional — extra Solana senders (comma/newline sep.)
 SOLANA_RPC_URL=https://... # required to enable Solana
 ADMIN_PASSWORD=...
 SESSION_SECRET=...         # random 32+ chars, cookie signing
 ```
 
-**Enablement rules** (`lib/env.ts`): all EVM chains require `EVM_PRIVATE_KEY`;
+**Multiple senders:** `EVM_PRIVATE_KEY` / `SOLANA_PRIVATE_KEY` may each hold
+several keys separated by commas, semicolons, or newlines (or use the plural
+`*_PRIVATE_KEYS` vars). Every distinct key becomes a selectable sender in the
+header dropdown; each EVM key is the same address on all EVM chains. A single key
+still works exactly as before. Keys are matched to requests by address
+server-side, and a malformed key is skipped (never logged) rather than breaking
+the app.
+
+**Enablement rules** (`lib/env.ts`): all EVM chains require at least one EVM key;
 Ethereum additionally requires its RPC var (public L1 endpoints are unreliable);
-the other five EVM chains fall back to a default public RPC. Solana requires both
-of its vars. Disabled chains are simply hidden — the app never crashes.
+the other five EVM chains fall back to a default public RPC. Solana requires at
+least one Solana key plus its RPC. Disabled chains are simply hidden — the app
+never crashes.
 
 ## Security model
 

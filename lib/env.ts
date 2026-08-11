@@ -14,12 +14,32 @@ function readEnv(name: string): string | undefined {
   return trimmed.length === 0 ? undefined : trimmed;
 }
 
-export function evmPrivateKey(): string | undefined {
-  return readEnv("EVM_PRIVATE_KEY");
+/**
+ * Read one or more values from the given env vars, splitting each on comma,
+ * semicolon, or whitespace/newlines. Order is preserved and exact duplicates are
+ * removed. Safe for hex (0x…) and base58 keys, which never contain separators.
+ */
+function readEnvList(...names: string[]): string[] {
+  const out: string[] = [];
+  for (const name of names) {
+    const v = process.env[name];
+    if (v == null) continue;
+    for (const token of v.split(/[\s,;]+/)) {
+      const t = token.trim();
+      if (t) out.push(t);
+    }
+  }
+  return Array.from(new Set(out));
 }
 
-export function solanaPrivateKey(): string | undefined {
-  return readEnv("SOLANA_PRIVATE_KEY");
+/** All configured EVM private keys (one key = one sender address, all chains). */
+export function evmPrivateKeys(): string[] {
+  return readEnvList("EVM_PRIVATE_KEY", "EVM_PRIVATE_KEYS");
+}
+
+/** All configured Solana secret keys (base58, Phantom export format). */
+export function solanaPrivateKeys(): string[] {
+  return readEnvList("SOLANA_PRIVATE_KEY", "SOLANA_PRIVATE_KEYS");
 }
 
 export function adminPassword(): string | undefined {
@@ -39,19 +59,19 @@ export function rpcUrlFor(chain: ChainEntry): string | undefined {
 }
 
 /**
- * A chain is enabled when its keys and (where required) RPC are present:
- *  - EVM: requires EVM_PRIVATE_KEY. Ethereum additionally requires its RPC env
- *    var. The other five EVM chains fall back to a default public RPC.
- *  - Solana: requires both SOLANA_PRIVATE_KEY and SOLANA_RPC_URL.
+ * A chain is enabled when at least one key and (where required) RPC are present:
+ *  - EVM: requires at least one EVM key. Ethereum additionally requires its RPC
+ *    env var. The other five EVM chains fall back to a default public RPC.
+ *  - Solana: requires at least one Solana key and SOLANA_RPC_URL.
  */
 export function isChainEnabled(chain: ChainEntry): boolean {
   if (chain.kind === "evm") {
-    if (!evmPrivateKey()) return false;
+    if (evmPrivateKeys().length === 0) return false;
     // Any chain without a default RPC (e.g. Ethereum) needs an explicit env var.
     return rpcUrlFor(chain) !== undefined;
   }
   // Solana
-  return Boolean(solanaPrivateKey()) && rpcUrlFor(chain) !== undefined;
+  return solanaPrivateKeys().length > 0 && rpcUrlFor(chain) !== undefined;
 }
 
 export function enabledChains(): ChainEntry[] {

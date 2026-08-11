@@ -6,7 +6,7 @@ import { getAddress } from "viem";
 import type { ChainInfo, ParseError, Recipient } from "@/lib/types";
 import { parseRecipients } from "@/lib/parse";
 import { formatRaw } from "@/lib/amount";
-import { copyToClipboard, sumRaw, truncateAddress } from "@/lib/ui";
+import { sumRaw, truncateAddress } from "@/lib/ui";
 import { CopyButton } from "@/components/CopyButton";
 import { RecipientsTable } from "@/components/RecipientsTable";
 
@@ -25,6 +25,7 @@ export default function Home() {
 
   const [chains, setChains] = useState<ChainInfo[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedSender, setSelectedSender] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [text, setText] = useState("");
@@ -76,7 +77,9 @@ export default function Home() {
         const data = (await res.json()) as { chains: ChainInfo[] };
         if (cancelled) return;
         setChains(data.chains);
-        setActiveId(data.chains[0]?.id ?? null);
+        const first = data.chains[0];
+        setActiveId(first?.id ?? null);
+        setSelectedSender(first?.senders[0] ?? null);
       } catch {
         if (!cancelled) setLoadError("Failed to load wallet info");
       }
@@ -87,30 +90,41 @@ export default function Home() {
   }, [router]);
 
   // --- Chain switch clears parse state -------------------------------------
-  const switchChain = useCallback((id: string) => {
-    setActiveId(id);
-    setRecipients([]);
-    setParseErrors([]);
-    setParsed(false);
-    // Amounts mean a different token per chain — clear the shared amount too.
-    setUniformAmount("");
-    setSenderBalanceRaw(null);
-    setFeePerTransfer(null);
-    setFeeError(null);
-    setRunError(null);
-    setHasFailure(false);
-  }, []);
+  const switchChain = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      const next = chains?.find((c) => c.id === id);
+      // Keep the current sender when it's valid on the new chain (all EVM chains
+      // share the same sender set); otherwise default to that chain's first.
+      setSelectedSender((prev) =>
+        next && prev && next.senders.includes(prev)
+          ? prev
+          : (next?.senders[0] ?? null),
+      );
+      setRecipients([]);
+      setParseErrors([]);
+      setParsed(false);
+      // Amounts mean a different token per chain — clear the shared amount too.
+      setUniformAmount("");
+      setSenderBalanceRaw(null);
+      setFeePerTransfer(null);
+      setFeeError(null);
+      setRunError(null);
+      setHasFailure(false);
+    },
+    [chains],
+  );
 
   // --- Balances ------------------------------------------------------------
   const fetchBalances = useCallback(
     async (rows: Recipient[]) => {
-      if (!activeChain) return;
+      if (!activeChain || !selectedSender) return;
       setLoadingBalances(true);
       try {
         const recipientAddrs = rows.map((r) =>
           normalizeAddr(r.address, activeChain.kind),
         );
-        const senderAddr = activeChain.address;
+        const senderAddr = selectedSender;
         const all = Array.from(new Set([senderAddr, ...recipientAddrs]));
         const res = await fetch("/api/balances", {
           method: "POST",
@@ -136,7 +150,7 @@ export default function Home() {
         setLoadingBalances(false);
       }
     },
-    [activeChain],
+    [activeChain, selectedSender],
   );
 
   // Refresh sender balance only (used before we have recipients).
@@ -144,11 +158,11 @@ export default function Home() {
     await fetchBalances(recipientsRef.current);
   }, [fetchBalances]);
 
-  // Load sender balance whenever the active chain changes.
+  // Load balances whenever the active chain or selected sender changes.
   useEffect(() => {
-    if (activeChain) void fetchBalances([]);
+    if (activeChain && selectedSender) void fetchBalances(recipientsRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId]);
+  }, [activeId, selectedSender]);
 
   // --- Fee estimate (EVM) --------------------------------------------------
   const fetchFees = useCallback(async () => {
@@ -224,7 +238,7 @@ export default function Home() {
 
   // --- Execution: EVM ------------------------------------------------------
   const runEvm = useCallback(async () => {
-    if (!activeChain) return;
+    if (!activeChain || !selectedSender) return;
     setRunError(null);
     setExecuting(true);
     setHasFailure(false);
@@ -232,7 +246,7 @@ export default function Home() {
       const prep = await fetch("/api/evm/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chain: activeChain.id }),
+        body: JSON.stringify({ chain: activeChain.id, from: selectedSender }),
       });
       if (!prep.ok) {
         const body = await prep.json().catch(() => ({}));
@@ -258,6 +272,7 @@ export default function Home() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chain: activeChain.id,
+              from: selectedSender,
               to: current.address,
               amountDecimal: current.amountDecimal,
               nonce,
@@ -316,11 +331,11 @@ export default function Home() {
       setExecuting(false);
       void fetchBalances(recipientsRef.current);
     }
-  }, [activeChain, patchRow, fetchBalances]);
+  }, [activeChain, selectedSender, patchRow, fetchBalances]);
 
   // --- Execution: Solana ---------------------------------------------------
   const runSolana = useCallback(async () => {
-    if (!activeChain) return;
+    if (!activeChain || !selectedSender) return;
     setRunError(null);
     setExecuting(true);
     setHasFailure(false);
@@ -350,6 +365,7 @@ export default function Home() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              from: selectedSender,
               transfers: indices.map((idx) => ({
                 to: recipientsRef.current[idx].address,
                 amountDecimal: recipientsRef.current[idx].amountDecimal,
@@ -377,7 +393,7 @@ export default function Home() {
       setExecuting(false);
       void fetchBalances(recipientsRef.current);
     }
-  }, [activeChain, patchRow, fetchBalances]);
+  }, [activeChain, selectedSender, patchRow, fetchBalances]);
 
   const onSend = useCallback(() => {
     if (!activeChain) return;
@@ -462,13 +478,36 @@ export default function Home() {
           </div>
 
           <div className="ml-auto flex items-center gap-4">
-            {activeChain && (
+            {activeChain && selectedSender && (
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-zinc-500">sender</span>
-                <span className="num text-zinc-300" title={activeChain.address}>
-                  {truncateAddress(activeChain.address, 6, 4)}
+                <span className="text-zinc-500">
+                  sender
+                  {activeChain.senders.length > 1 && (
+                    <span className="ml-1 text-zinc-600">
+                      ({activeChain.senders.length})
+                    </span>
+                  )}
                 </span>
-                <CopyButton value={activeChain.address} />
+                {activeChain.senders.length > 1 ? (
+                  <select
+                    value={selectedSender}
+                    onChange={(e) => setSelectedSender(e.target.value)}
+                    disabled={executing}
+                    className="num rounded border border-edge bg-panelalt px-1.5 py-0.5 text-xs text-zinc-200 outline-none focus:border-zinc-500 disabled:opacity-50"
+                    title={selectedSender}
+                  >
+                    {activeChain.senders.map((s) => (
+                      <option key={s} value={s}>
+                        {truncateAddress(s, 6, 4)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="num text-zinc-300" title={selectedSender}>
+                    {truncateAddress(selectedSender, 6, 4)}
+                  </span>
+                )}
+                <CopyButton value={selectedSender} />
               </div>
             )}
             {activeChain && (

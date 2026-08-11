@@ -6,6 +6,7 @@ import { getEvmChain } from "@/lib/chains";
 import { isChainEnabled } from "@/lib/env";
 import {
   assertChainId,
+  evmAccountForAddress,
   getAddress,
   isAddress,
   resolveEvmFees,
@@ -18,6 +19,7 @@ export const maxDuration = 60;
 
 const schema = z.object({
   chain: z.string().min(1),
+  from: z.string().min(1),
   to: z.string().min(1),
   amountDecimal: z.string().min(1),
   nonce: z.number().int().nonnegative(),
@@ -58,6 +60,14 @@ export async function POST(req: Request) {
     );
   }
 
+  const account = evmAccountForAddress(parsed.data.from);
+  if (!account) {
+    return NextResponse.json(
+      { error: "Unknown sender address" },
+      { status: 400 },
+    );
+  }
+
   let value: bigint;
   try {
     value = parseAmountToRaw(parsed.data.amountDecimal, chain.nativeDecimals);
@@ -69,11 +79,11 @@ export async function POST(req: Request) {
     // Re-assert chainId before signing so a mis-set RPC can never send funds on
     // the wrong network.
     await assertChainId(chain);
-    const wallet = walletClientFor(chain);
+    const wallet = walletClientFor(chain, account);
     // Estimate fees and apply the registry priority-fee floor for this chain.
     const fees = await resolveEvmFees(chain);
     const hash = await wallet.sendTransaction({
-      account: wallet.account!,
+      account,
       chain: chain.viemChain,
       to: getAddress(parsed.data.to) as Address,
       value,
