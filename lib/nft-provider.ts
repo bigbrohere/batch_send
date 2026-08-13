@@ -149,8 +149,94 @@ class AlchemyNftProvider implements NftProvider {
   }
 }
 
-// Single adapter instance; swap here to change providers.
-const provider: NftProvider = new AlchemyNftProvider();
+// --- Blockscout adapter (keyless; for chains Alchemy doesn't index) ----------
+interface BlockscoutNft {
+  id?: string;
+  token_type?: string;
+  value?: string;
+  image_url?: string | null;
+  metadata?: { name?: string | null; image?: string | null } | null;
+  token?: { address?: string; name?: string | null; type?: string } | null;
+}
+
+function mapBlockscoutItem(
+  chain: ChainEntry,
+  nft: BlockscoutNft,
+): NftItem | null {
+  const contract = nft.token?.address;
+  const tokenId = nft.id;
+  if (!contract || tokenId == null) return null;
+
+  const standard = normalizeStandard(nft.token_type ?? nft.token?.type);
+  const name = nft.metadata?.name?.trim()
+    ? (nft.metadata.name as string).trim()
+    : `#${tokenId}`;
+
+  return {
+    contract,
+    tokenId,
+    standard,
+    balance: nft.value && nft.value !== "0" ? nft.value : "1",
+    name,
+    collectionName: nft.token?.name ?? "",
+    imageUrl: nft.image_url ?? nft.metadata?.image ?? null,
+    chain: chain.id,
+  };
+}
+
+class BlockscoutNftProvider implements NftProvider {
+  async getNftsForOwner(
+    chain: ChainEntry,
+    address: string,
+  ): Promise<NftItem[]> {
+    if (!chain.nftSupport || !chain.blockscoutApiBase) {
+      throw new Error(`Blockscout NFT discovery unavailable for ${chain.id}`);
+    }
+    const base = `${chain.blockscoutApiBase}/api/v2/addresses/${address}/nft`;
+    const items: NftItem[] = [];
+    // next_page_params is an opaque object echoed back as query params.
+    let nextParams: Record<string, string | number> | null = null;
+    const MAX_PAGES = 20;
+
+    await acquire();
+    try {
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const params = new URLSearchParams({ type: "ERC-721,ERC-1155" });
+        if (nextParams) {
+          for (const [k, v] of Object.entries(nextParams)) {
+            params.set(k, String(v));
+          }
+        }
+        const res = await fetchWithBackoff(`${base}?${params.toString()}`);
+        if (!res.ok) throw new Error(`Blockscout NFT API error ${res.status}`);
+        const data = (await res.json()) as {
+          items?: BlockscoutNft[];
+          next_page_params?: Record<string, string | number> | null;
+        };
+        for (const raw of data.items ?? []) {
+          const item = mapBlockscoutItem(chain, raw);
+          if (item) items.push(item);
+        }
+        if (!data.next_page_params) break;
+        nextParams = data.next_page_params;
+      }
+    } finally {
+      release();
+    }
+
+    return items;
+  }
+}
+
+// Adapter instances; select per chain via its registry `nftProvider`.
+const alchemyProvider: NftProvider = new AlchemyNftProvider();
+const blockscoutProvider: NftProvider = new BlockscoutNftProvider();
+
+function providerForChain(chain: ChainEntry): NftProvider {
+  return chain.nftProvider === "blockscout"
+    ? blockscoutProvider
+    : alchemyProvider;
+}
 
 /**
  * Discover NFTs for one owner on one chain, served from a 60s cache unless
@@ -167,7 +253,7 @@ export async function getNftsForOwnerCached(
     const hit = cache.get(ck);
     if (hit && Date.now() - hit.at < TTL_MS) return hit.items;
   }
-  const items = await provider.getNftsForOwner(chain, address);
+  const items = await providerForChain(chain).getNftsForOwner(chain, address);
   cache.set(ck, { at: Date.now(), items });
   return items;
 }
