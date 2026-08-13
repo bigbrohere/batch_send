@@ -29,6 +29,7 @@ export async function GET() {
       explorerBaseUrl: c.explorerBaseUrl,
       senders: c.kind === "evm" ? evm : solana,
       receiptTimeoutMs: receiptTimeoutFor(c),
+      nftSupport: Boolean(c.nftSupport),
     }));
     return NextResponse.json({ chains });
   } catch {
