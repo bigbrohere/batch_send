@@ -49,6 +49,13 @@ export interface ChainEntry {
    * "unconfirmed". Defaults handled at the call site when absent.
    */
   receiptTimeoutMs?: number;
+  /** Whether the NFT console (discovery + transfers) is available on this chain. */
+  nftSupport?: boolean;
+  /**
+   * Alchemy network slug used to build the NFT API base URL
+   * (`https://<slug>.g.alchemy.com/nft/v3/<key>`). Present only where nftSupport.
+   */
+  alchemyNetwork?: string;
 }
 
 // Custom chain objects for networks not shipped by viem.
@@ -94,6 +101,8 @@ export const CHAINS: ChainEntry[] = [
     viemChain: mainnet,
     minPriorityFeeWei: 1_000_000_000n, // 1 gwei
     receiptTimeoutMs: 180_000,
+    nftSupport: true,
+    alchemyNetwork: "eth-mainnet",
   },
   {
     id: "base",
@@ -109,6 +118,8 @@ export const CHAINS: ChainEntry[] = [
     viemChain: base,
     minPriorityFeeWei: 50_000_000n, // 0.05 gwei
     receiptTimeoutMs: 60_000,
+    nftSupport: true,
+    alchemyNetwork: "base-mainnet",
   },
   {
     id: "arbitrum",
@@ -125,6 +136,8 @@ export const CHAINS: ChainEntry[] = [
     // No minPriorityFeeWei: Nitro sequencer is FCFS — priority tips do not
     // affect ordering/inclusion, so flooring them only wastes fees.
     receiptTimeoutMs: 60_000,
+    nftSupport: true,
+    alchemyNetwork: "arb-mainnet",
   },
   {
     id: "polygon",
@@ -140,6 +153,8 @@ export const CHAINS: ChainEntry[] = [
     viemChain: polygon,
     // No minPriorityFeeWei: leave current estimate behavior unchanged.
     receiptTimeoutMs: 60_000,
+    nftSupport: true,
+    alchemyNetwork: "polygon-mainnet",
   },
   {
     id: "hyperevm",

@@ -11,6 +11,8 @@ export interface ChainInfo {
   senders: string[];
   /** Max ms the client polls for an EVM receipt before marking it unconfirmed. */
   receiptTimeoutMs: number;
+  /** Whether the NFT console is available on this chain. */
+  nftSupport: boolean;
 }
 
 export type RowStatus =

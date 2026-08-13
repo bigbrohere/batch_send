@@ -37,6 +37,24 @@ export function evmPrivateKeys(): string[] {
   return readEnvList("EVM_PRIVATE_KEY", "EVM_PRIVATE_KEYS");
 }
 
+/**
+ * Funding-wallet key(s): the FUNDING role for the NFT console (EVM_PRIVATE_KEY).
+ * The funding wallet powers native sends and is never used to sign NFT transfers.
+ */
+export function evmFundingKeys(): string[] {
+  return readEnvList("EVM_PRIVATE_KEY");
+}
+
+/** Burner-wallet keys: the BURNER role for the NFT console (EVM_PRIVATE_KEYS). */
+export function evmBurnerKeys(): string[] {
+  return readEnvList("EVM_PRIVATE_KEYS");
+}
+
+/** Alchemy NFT API key — used for read-only NFT discovery, never tx broadcast. */
+export function alchemyNftApiKey(): string | undefined {
+  return readEnv("ALCHEMY_NFT_API_KEY");
+}
+
 /** All configured Solana secret keys (base58, Phantom export format). */
 export function solanaPrivateKeys(): string[] {
   return readEnvList("SOLANA_PRIVATE_KEY", "SOLANA_PRIVATE_KEYS");
