@@ -58,10 +58,11 @@ export async function POST(req: Request) {
       parsed.data.refresh ?? false,
     );
     return NextResponse.json({ address: account.address, items });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to load NFTs" },
-      { status: 502 },
-    );
+  } catch (e) {
+    // Surface the provider's (secret-free) message so discovery failures are
+    // diagnosable in the UI instead of looking like "0 NFTs".
+    const message =
+      e instanceof Error ? e.message : "Failed to load NFTs";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

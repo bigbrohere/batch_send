@@ -71,6 +71,7 @@ export function NftsTab() {
   const [gas, setGas] = useState<Record<string, string>>({});
   const [nftsByWallet, setNftsByWallet] = useState<Record<string, NftItem[]>>({});
   const [walletLoading, setWalletLoading] = useState<Record<string, boolean>>({});
+  const [nftError, setNftError] = useState<Record<string, string>>({});
 
   const [filterWallet, setFilterWallet] = useState<string>("all");
   const [filterCollection, setFilterCollection] = useState<string>("all");
@@ -178,6 +179,7 @@ export function NftsTab() {
         Object.fromEntries(burners.map((b) => [b.address, true])),
       );
       setNftsByWallet({});
+      setNftError({});
       await Promise.all(
         burners.map(async (b) => {
           try {
@@ -194,10 +196,19 @@ export function NftsTab() {
               const data = (await res.json()) as { items: NftItem[] };
               setNftsByWallet((prev) => ({ ...prev, [b.address]: data.items }));
             } else {
+              const body = await res.json().catch(() => ({}));
               setNftsByWallet((prev) => ({ ...prev, [b.address]: [] }));
+              setNftError((prev) => ({
+                ...prev,
+                [b.address]: body.error ?? `discovery failed (${res.status})`,
+              }));
             }
           } catch {
             setNftsByWallet((prev) => ({ ...prev, [b.address]: [] }));
+            setNftError((prev) => ({
+              ...prev,
+              [b.address]: "network error reaching discovery",
+            }));
           } finally {
             setWalletLoading((prev) => ({ ...prev, [b.address]: false }));
           }
@@ -789,6 +800,14 @@ export function NftsTab() {
                     no gas — fund from Send tab
                   </div>
                 )}
+                {nftError[b.address] && (
+                  <div
+                    className="mt-1.5 rounded border border-red-900 bg-red-950/40 px-1.5 py-0.5 text-[10px] text-red-300"
+                    title={nftError[b.address]}
+                  >
+                    NFT load failed
+                  </div>
+                )}
               </div>
             );
           })}
@@ -841,6 +860,23 @@ export function NftsTab() {
               Select all ({filtered.length})
             </button>
           </div>
+
+          {/* Discovery error banner (e.g. Blockscout/Alchemy endpoint failure) */}
+          {(() => {
+            const firstErr = Object.values(nftError)[0];
+            const allErrored =
+              burners.length > 0 &&
+              Object.keys(nftError).length === burners.length;
+            if (firstErr && allErrored) {
+              return (
+                <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">
+                  <div className="font-medium">NFT discovery failed on this chain.</div>
+                  <div className="mt-1 break-all text-red-200/90">{firstErr}</div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Grid */}
           {filtered.length === 0 ? (
