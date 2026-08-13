@@ -1,6 +1,7 @@
 import { getAddress, type Address } from "viem";
-import type { ChainEntry } from "./chains";
-import { publicClientFor } from "./evm";
+import { MULTICALL3_ADDRESS, type ChainEntry } from "./chains";
+import { hasMulticall3, publicClientFor } from "./evm";
+import { mapWithConcurrency } from "./concurrency";
 import { ERC721_ABI, ERC1155_ABI } from "./nft-abi";
 import type { NftStandard } from "./nft-types";
 
@@ -61,6 +62,14 @@ export async function verifyOwnership(
   if (rows.length === 0) return [];
   const client = publicClientFor(chain);
 
+  const isOwned = (r: OwnershipRow, ok: boolean, value: unknown): boolean => {
+    if (!ok) return false;
+    if (r.standard === "erc721") {
+      return getAddress(value as Address) === getAddress(r.owner);
+    }
+    return (value as bigint) >= BigInt(r.amount ?? "1");
+  };
+
   const contracts = rows.map((r) =>
     r.standard === "erc721"
       ? {
@@ -77,17 +86,28 @@ export async function verifyOwnership(
         },
   );
 
-  const results = await client.multicall({ contracts, allowFailure: true });
+  // Prefer Multicall3 when deployed. Pass the address explicitly so custom chains
+  // (whose viem chain object has no multicall3 config) still work; otherwise fall
+  // back to individual reads with bounded concurrency.
+  if (await hasMulticall3(chain)) {
+    const results = await client.multicall({
+      contracts,
+      allowFailure: true,
+      multicallAddress: MULTICALL3_ADDRESS,
+    });
+    return rows.map((r, i) =>
+      isOwned(r, results[i].status === "success", results[i].result),
+    );
+  }
 
-  return rows.map((r, i) => {
-    const res = results[i];
-    if (res.status !== "success") return false;
-    if (r.standard === "erc721") {
-      const owner = res.result as Address;
-      return getAddress(owner) === getAddress(r.owner);
+  return mapWithConcurrency(contracts, 10, async (c, i) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const value = await client.readContract(c as any);
+      return isOwned(rows[i], true, value);
+    } catch {
+      return false;
     }
-    const bal = res.result as bigint;
-    return bal >= BigInt(r.amount ?? "1");
   });
 }
 

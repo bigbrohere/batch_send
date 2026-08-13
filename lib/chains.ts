@@ -51,11 +51,18 @@ export interface ChainEntry {
   receiptTimeoutMs?: number;
   /** Whether the NFT console (discovery + transfers) is available on this chain. */
   nftSupport?: boolean;
+  /** Which discovery adapter to use for this chain. Defaults to "alchemy". */
+  nftProvider?: "alchemy" | "blockscout";
   /**
    * Alchemy network slug used to build the NFT API base URL
    * (`https://<slug>.g.alchemy.com/nft/v3/<key>`). Present only where nftSupport.
    */
   alchemyNetwork?: string;
+  /**
+   * Blockscout instance base URL (no trailing slash) for chains discovered via
+   * the Blockscout NFT API (`/api/v2/addresses/{addr}/nft`). No API key needed.
+   */
+  blockscoutApiBase?: string;
 }
 
 // Custom chain objects for networks not shipped by viem.
@@ -186,6 +193,10 @@ export const CHAINS: ChainEntry[] = [
     // No minPriorityFeeWei: Arbitrum Nitro FCFS — tips do not affect ordering,
     // so flooring the priority fee only wastes funds.
     receiptTimeoutMs: 60_000,
+    // NFTs via the chain's Blockscout instance (Alchemy has no Robinhood NFT API).
+    nftSupport: true,
+    nftProvider: "blockscout",
+    blockscoutApiBase: "https://robinhoodchain.blockscout.com",
   },
   {
     id: "solana",
