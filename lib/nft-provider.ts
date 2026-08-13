@@ -197,22 +197,45 @@ class BlockscoutNftProvider implements NftProvider {
     // next_page_params is an opaque object echoed back as query params.
     let nextParams: Record<string, string | number> | null = null;
     const MAX_PAGES = 20;
+    // Some Blockscout versions reject the combined `type` value — drop it if so.
+    let useTypeFilter = true;
 
     await acquire();
     try {
       for (let page = 0; page < MAX_PAGES; page++) {
-        const params = new URLSearchParams({ type: "ERC-721,ERC-1155" });
+        const params = new URLSearchParams();
+        if (useTypeFilter) params.set("type", "ERC-721,ERC-1155");
         if (nextParams) {
           for (const [k, v] of Object.entries(nextParams)) {
             params.set(k, String(v));
           }
         }
-        const res = await fetchWithBackoff(`${base}?${params.toString()}`);
-        if (!res.ok) throw new Error(`Blockscout NFT API error ${res.status}`);
-        const data = (await res.json()) as {
+        const qs = params.toString();
+        const res = await fetchWithBackoff(qs ? `${base}?${qs}` : base);
+
+        if (!res.ok) {
+          // Retry the first page once without the type filter before giving up.
+          if (useTypeFilter && page === 0 && res.status >= 400 && res.status < 500) {
+            useTypeFilter = false;
+            page = -1; // loop will ++ back to 0
+            continue;
+          }
+          const snippet = (await res.text().catch(() => "")).slice(0, 120);
+          throw new Error(
+            `Blockscout NFT API ${res.status} at ${chain.blockscoutApiBase}` +
+              (snippet ? ` — ${snippet}` : ""),
+          );
+        }
+
+        const data = (await res.json().catch(() => null)) as {
           items?: BlockscoutNft[];
           next_page_params?: Record<string, string | number> | null;
-        };
+        } | null;
+        if (!data) {
+          throw new Error(
+            `Blockscout NFT API at ${chain.blockscoutApiBase} returned non-JSON`,
+          );
+        }
         for (const raw of data.items ?? []) {
           const item = mapBlockscoutItem(chain, raw);
           if (item) items.push(item);
