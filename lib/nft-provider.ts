@@ -71,7 +71,17 @@ interface AlchemyNft {
 }
 
 function normalizeStandard(value: string | undefined): NftStandard {
-  return value?.toUpperCase() === "ERC1155" ? "erc1155" : "erc721";
+  // Handle "ERC1155", "ERC-1155", "erc1155", etc.
+  return value && /1155/.test(value) ? "erc1155" : "erc721";
+}
+
+/** Resolve an ipfs:// URI to an HTTP gateway so <img> can render it. */
+function toDisplayUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith("ipfs://")) {
+    return `https://dweb.link/ipfs/${url.slice("ipfs://".length)}`;
+  }
+  return url;
 }
 
 function mapItem(chain: ChainEntry, nft: AlchemyNft): NftItem | null {
@@ -156,14 +166,21 @@ interface BlockscoutNft {
   value?: string;
   image_url?: string | null;
   metadata?: { name?: string | null; image?: string | null } | null;
-  token?: { address?: string; name?: string | null; type?: string } | null;
+  token?: {
+    // Blockscout returns the contract under `address_hash` (older builds:
+    // `address`). Accept both.
+    address_hash?: string;
+    address?: string;
+    name?: string | null;
+    type?: string;
+  } | null;
 }
 
 function mapBlockscoutItem(
   chain: ChainEntry,
   nft: BlockscoutNft,
 ): NftItem | null {
-  const contract = nft.token?.address;
+  const contract = nft.token?.address_hash ?? nft.token?.address;
   const tokenId = nft.id;
   if (!contract || tokenId == null) return null;
 
@@ -179,7 +196,7 @@ function mapBlockscoutItem(
     balance: nft.value && nft.value !== "0" ? nft.value : "1",
     name,
     collectionName: nft.token?.name ?? "",
-    imageUrl: nft.image_url ?? nft.metadata?.image ?? null,
+    imageUrl: toDisplayUrl(nft.image_url ?? nft.metadata?.image),
     chain: chain.id,
   };
 }

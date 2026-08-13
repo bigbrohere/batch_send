@@ -3,6 +3,15 @@
 import { useState } from "react";
 import type { NftItem } from "@/lib/nft-types";
 import { truncateAddress } from "@/lib/ui";
+import { isIpfsUrl } from "@/lib/ipfs";
+
+/** Route flaky IPFS gateways through our multi-gateway proxy; leave CDN URLs alone. */
+function displaySrc(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  return isIpfsUrl(imageUrl)
+    ? `/api/nft/image?u=${encodeURIComponent(imageUrl)}`
+    : imageUrl;
+}
 
 export interface AggItem extends NftItem {
   /** Owning burner wallet address. */
@@ -23,7 +32,8 @@ export function NftCard({
   ownerIndex: number;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
-  const showImg = item.imageUrl && !imgFailed;
+  const src = displaySrc(item.imageUrl);
+  const showImg = src && !imgFailed;
 
   return (
     <button
@@ -68,7 +78,7 @@ export function NftCard({
         {showImg ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={item.imageUrl as string}
+            src={src as string}
             alt={item.name}
             loading="lazy"
             onError={() => setImgFailed(true)}
