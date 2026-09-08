@@ -9,6 +9,7 @@ import { formatRaw } from "@/lib/amount";
 import { sumRaw, truncateAddress } from "@/lib/ui";
 import { CopyButton } from "@/components/CopyButton";
 import { RecipientsTable } from "@/components/RecipientsTable";
+import { TokenPanel } from "@/components/TokenPanel";
 
 const SOLANA_CHUNK = 15;
 const SOLANA_FEE_PER_SIG = 5000n; // lamports
@@ -28,6 +29,7 @@ export function SendTab() {
   const [selectedSender, setSelectedSender] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [asset, setAsset] = useState<"native" | "token">("native");
   const [text, setText] = useState("");
   const [uniformMode, setUniformMode] = useState(false);
   const [uniformAmount, setUniformAmount] = useState("");
@@ -528,6 +530,43 @@ export function SendTab() {
       </header>
 
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
+        {/* Asset selector: native token vs ERC-20 */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase tracking-wide text-zinc-500">
+            Asset
+          </span>
+          <div className="flex items-center gap-1 rounded-full border border-edge bg-panelalt p-0.5 text-xs">
+            <button
+              onClick={() => setAsset("native")}
+              disabled={executing}
+              className={`rounded-full px-3 py-1 transition disabled:opacity-50 ${
+                asset === "native"
+                  ? "bg-zinc-100 text-zinc-900"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Native{activeChain ? ` (${activeChain.symbol})` : ""}
+            </button>
+            <button
+              onClick={() => setAsset("token")}
+              disabled={executing}
+              className={`rounded-full px-3 py-1 transition disabled:opacity-50 ${
+                asset === "token"
+                  ? "bg-zinc-100 text-zinc-900"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              ERC-20 token
+            </button>
+          </div>
+        </div>
+
+        {asset === "token" ? (
+          activeChain ? (
+            <TokenPanel key={activeChain.id} chain={activeChain} />
+          ) : null
+        ) : (
+          <>
         {/* Recipient input */}
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -746,6 +785,8 @@ export function SendTab() {
         {/* Recipients table */}
         {activeChain && (
           <RecipientsTable recipients={recipients} chain={activeChain} />
+        )}
+          </>
         )}
       </div>
 
