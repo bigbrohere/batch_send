@@ -59,6 +59,8 @@ export function TokenPanel({ chain }: { chain: ChainInfo }) {
   // --- Send mode ----------------------------------------------------------
   const [sender, setSender] = useState<string | null>(chain.senders[0] ?? null);
   const [text, setText] = useState("");
+  const [uniformMode, setUniformMode] = useState(false);
+  const [uniformAmount, setUniformAmount] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [parseErrors, setParseErrors] = useState<ParseError[]>([]);
   const [parsed, setParsed] = useState(false);
@@ -184,11 +186,9 @@ export function TokenPanel({ chain }: { chain: ChainInfo }) {
   const onParse = useCallback(async () => {
     if (!token) return;
     setRunError(null);
-    const { recipients: rows, errors } = parseRecipients(
-      text,
-      "evm",
-      token.decimals,
-    );
+    const { recipients: rows, errors } = parseRecipients(text, "evm", token.decimals, {
+      uniformAmount: uniformMode ? uniformAmount.trim() : null,
+    });
     setParseErrors(errors);
     if (errors.length > 0) {
       setParsed(false);
@@ -199,7 +199,7 @@ export function TokenPanel({ chain }: { chain: ChainInfo }) {
     recipientsRef.current = rows;
     setParsed(true);
     await fetchSendBalances(rows);
-  }, [token, text, fetchSendBalances]);
+  }, [token, text, uniformMode, uniformAmount, fetchSendBalances]);
 
   const totalSend = useMemo(
     () => sumRaw(recipients.map((r) => r.rawAmount)),
@@ -517,6 +517,10 @@ export function TokenPanel({ chain }: { chain: ChainInfo }) {
               senderBalance={senderBalance}
               text={text}
               setText={setText}
+              uniformMode={uniformMode}
+              setUniformMode={setUniformMode}
+              uniformAmount={uniformAmount}
+              setUniformAmount={setUniformAmount}
               onParse={onParse}
               parsed={parsed}
               recipients={recipients}
@@ -558,6 +562,10 @@ function SendMode(props: {
   senderBalance: string | null;
   text: string;
   setText: (s: string) => void;
+  uniformMode: boolean;
+  setUniformMode: (b: boolean) => void;
+  uniformAmount: string;
+  setUniformAmount: (s: string) => void;
   onParse: () => void;
   parsed: boolean;
   recipients: Recipient[];
@@ -576,6 +584,10 @@ function SendMode(props: {
     senderBalance,
     text,
     setText,
+    uniformMode,
+    setUniformMode,
+    uniformAmount,
+    setUniformAmount,
     onParse,
     parsed,
     recipients,
@@ -615,19 +627,73 @@ function SendMode(props: {
         </span>
       </div>
 
+      {/* Amount mode toggle */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 rounded-full border border-edge bg-panelalt p-0.5 text-xs">
+          <button
+            onClick={() => setUniformMode(false)}
+            disabled={executing}
+            className={`rounded-full px-3 py-1 transition disabled:opacity-50 ${
+              !uniformMode ? "bg-zinc-100 text-zinc-900" : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Per-recipient amount
+          </button>
+          <button
+            onClick={() => setUniformMode(true)}
+            disabled={executing}
+            className={`rounded-full px-3 py-1 transition disabled:opacity-50 ${
+              uniformMode ? "bg-zinc-100 text-zinc-900" : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Same amount for all
+          </button>
+        </div>
+        {uniformMode && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-500">
+              Amount sent to every recipient
+            </span>
+            <div className="flex items-stretch overflow-hidden rounded-lg border border-edge bg-panelalt focus-within:border-zinc-500">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={uniformAmount}
+                onChange={(e) => setUniformAmount(e.target.value)}
+                disabled={executing}
+                spellCheck={false}
+                placeholder="0.0"
+                className="w-32 bg-transparent px-3 py-1.5 text-sm num outline-none disabled:opacity-60"
+              />
+              <span className="flex items-center border-l border-edge bg-panel px-3 text-xs font-medium text-zinc-300">
+                {token.symbol}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         disabled={executing}
         rows={5}
         spellCheck={false}
-        placeholder={`0xRecipient,1.5\n0xRecipient,0.25   (amounts in ${token.symbol})`}
+        placeholder={
+          uniformMode
+            ? `0xRecipient\n0xRecipient   (one address per line)`
+            : `0xRecipient,1.5\n0xRecipient,0.25   (amounts in ${token.symbol})`
+        }
         className="num w-full rounded border border-edge bg-panelalt px-3 py-2 text-sm outline-none focus:border-zinc-500"
       />
       <div className="flex items-center gap-3">
         <button
           onClick={onParse}
-          disabled={executing || text.trim().length === 0}
+          disabled={
+            executing ||
+            text.trim().length === 0 ||
+            (uniformMode && uniformAmount.trim().length === 0)
+          }
           className="rounded bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-40"
         >
           Parse
@@ -644,7 +710,7 @@ function SendMode(props: {
         <ul className="space-y-1 text-xs text-red-300">
           {parseErrors.map((e) => (
             <li key={e.line}>
-              line {e.line}: {e.reason}
+              {e.line === 0 ? "shared amount:" : `line ${e.line}:`} {e.reason}
             </li>
           ))}
         </ul>
